@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Google Form Filler</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="header">
+      <img src="icons/icon48.png" alt="logo" class="logo" />
+      <h1 class="title">Form Filler</h1>
+    </header>
+
+    <!-- Status banner -->
+    <div id="status-bar" class="status-bar hidden"></div>
+
+    <!-- Tab bar -->
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="fill">Fill</button>
+      <button class="tab-btn" data-tab="profiles">Profiles</button>
+      <button class="tab-btn" data-tab="debug">Debug</button>
+    </nav>
+
+    <!-- ── FILL TAB ── -->
+    <section class="tab-content active" id="tab-fill">
+      <div class="section">
+        <label class="label" for="json-input">Answer data (JSON)</label>
+        <textarea
+          id="json-input"
+          class="textarea"
+          rows="10"
+          placeholder='{\n  "Your question text": "Your answer",\n  "Checkbox question": ["Option A", "Option B"]\n}'
+          spellcheck="false"
+        ></textarea>
+        <p class="hint">
+          Keys are question titles (partial match supported).<br />
+          Use arrays for checkbox questions.
+        </p>
+      </div>
+
+      <div class="button-row">
+        <button id="btn-fill" class="btn btn-primary">▶ Fill Form</button>
+        <button id="btn-clear" class="btn btn-secondary">✕ Clear Form</button>
+      </div>
+    </section>
+
+    <!-- ── PROFILES TAB ── -->
+    <section class="tab-content" id="tab-profiles">
+      <div class="section">
+        <label class="label" for="profile-name">Profile name</label>
+        <div class="inline-row">
+          <input id="profile-name" class="input" type="text" placeholder="e.g. Work Survey" />
+          <button id="btn-save-profile" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <label class="label">Saved profiles</label>
+        <ul id="profile-list" class="profile-list">
+          <li class="profile-empty">No profiles saved yet.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ── DEBUG TAB ── -->
+    <section class="tab-content" id="tab-debug">
+      <div class="section">
+        <button id="btn-scrape" class="btn btn-secondary full-width">🔍 Scrape Questions</button>
+        <p class="hint">Detect all questions on the current form and show them below.</p>
+      </div>
+
+      <div class="section">
+        <label class="label">Detected questions</label>
+        <ul id="question-list" class="question-list">
+          <li class="profile-empty">Press "Scrape Questions" to detect fields.</li>
+        </ul>
+      </div>
+
+      <div class="section">
+        <button id="btn-export-template" class="btn btn-secondary full-width">📋 Copy JSON Template</button>
+        <p class="hint">Copies a JSON template based on detected questions to the clipboard.</p>
+      </div>
+    </section>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
