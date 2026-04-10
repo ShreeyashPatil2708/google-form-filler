@@ -68,11 +68,11 @@ function queryAll(root, selectorList) {
 }
 
 /**
- * Normalise a string for fuzzy matching (lowercase, trimmed, collapsed spaces).
+ * Normalize a string for fuzzy matching (lowercase, trimmed, collapsed spaces).
  * @param {string} str
  * @returns {string}
  */
-function normalise(str) {
+function normalize(str) {
   return (str || '').toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
@@ -199,10 +199,10 @@ function fillTextInput(item, value) {
  */
 function fillRadio(item, value) {
   const options = queryAll(item, SELECTORS.radioOption);
-  const target = normalise(value);
+  const target = normalize(value);
 
   for (const opt of options) {
-    const label = normalise(opt.getAttribute('data-value') || opt.textContent);
+    const label = normalize(opt.getAttribute('data-value') || opt.textContent);
     if (label === target || label.includes(target)) {
       opt.click();
       console.log(`[FormFiller] Selected radio option: "${opt.textContent.trim()}"`);
@@ -218,11 +218,11 @@ function fillRadio(item, value) {
  * @param {string|string[]} values
  */
 function fillCheckbox(item, values) {
-  const targets = (Array.isArray(values) ? values : [values]).map(normalise);
+  const targets = (Array.isArray(values) ? values : [values]).map(normalize);
   const options = queryAll(item, SELECTORS.checkboxOption);
 
   for (const opt of options) {
-    const label = normalise(opt.getAttribute('data-value') || opt.textContent);
+    const label = normalize(opt.getAttribute('data-value') || opt.textContent);
     const shouldCheck = targets.some((t) => label === t || label.includes(t));
     const isChecked = opt.getAttribute('aria-checked') === 'true';
 
@@ -244,9 +244,9 @@ function fillCheckbox(item, values) {
 async function fillDropdown(item, value) {
   const sel = item.querySelector('select');
   if (sel) {
-    const target = normalise(value);
+    const target = normalize(value);
     for (const opt of sel.options) {
-      if (normalise(opt.text) === target || normalise(opt.value) === target) {
+      if (normalize(opt.text) === target || normalize(opt.value) === target) {
         sel.value = opt.value;
         sel.dispatchEvent(new Event('change', { bubbles: true }));
         console.log(`[FormFiller] Selected native dropdown: "${opt.text}"`);
@@ -268,10 +268,10 @@ async function fillDropdown(item, value) {
   await new Promise((r) => setTimeout(r, 300));
 
   const optionEls = Array.from(document.querySelectorAll('[role="option"]'));
-  const target = normalise(value);
+  const target = normalize(value);
 
   for (const opt of optionEls) {
-    const label = normalise(opt.getAttribute('data-value') || opt.textContent);
+    const label = normalize(opt.getAttribute('data-value') || opt.textContent);
     if (label === target || label.includes(target)) {
       opt.click();
       console.log(`[FormFiller] Selected custom dropdown option: "${opt.textContent.trim()}"`);
@@ -302,12 +302,12 @@ async function fillForm(data) {
     if (!title) continue;
 
     // Look up the answer using exact then fuzzy matching
-    const normTitle = normalise(title);
+    const normTitle = normalize(title);
     let answer = null;
     let matchedKey = null;
 
     for (const key of Object.keys(data)) {
-      if (normalise(key) === normTitle) {
+      if (normalize(key) === normTitle) {
         answer = data[key];
         matchedKey = key;
         break;
@@ -317,7 +317,7 @@ async function fillForm(data) {
     // Fallback: partial match
     if (answer === null) {
       for (const key of Object.keys(data)) {
-        if (normTitle.includes(normalise(key)) || normalise(key).includes(normTitle)) {
+        if (normTitle.includes(normalize(key)) || normalize(key).includes(normTitle)) {
           answer = data[key];
           matchedKey = key;
           break;

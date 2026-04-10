@@ -359,11 +359,11 @@ btnExportTemplate.addEventListener('click', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Initialise
+// Initialize
 // ---------------------------------------------------------------------------
 
 async function init() {
-  console.log('[FormFiller] Initialising popup...');
+  console.log('[FormFiller] Initializing popup...');
   const profiles = await loadProfiles();
   renderProfiles(profiles);
 
