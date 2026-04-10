@@ -484,11 +484,21 @@ async function runAutofillWithRetry(sourceData, attempt = 0, force = false) {
 
   const items = queryAll(document, SELECTORS.questionItem);
   if (!items.length && attempt < MAX_AUTOFILL_RETRIES) {
+    if (pendingRetryId) {
+      autofillInProgress = false;
+      return { filled: 0, skipped: 0, errors: [] };
+    }
     autofillInProgress = false;
     pendingRetryId = setTimeout(() => {
+      pendingRetryId = null;
       runAutofillWithRetry(sourceData, attempt + 1, force);
     }, RETRY_DELAY_MS);
     return { filled: 0, skipped: 0, errors: [] };
+  }
+
+  if (pendingRetryId) {
+    clearTimeout(pendingRetryId);
+    pendingRetryId = null;
   }
 
   const result = await fillForm(sourceData);
