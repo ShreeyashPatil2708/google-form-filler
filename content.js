@@ -106,7 +106,7 @@ function normalizeText(value) {
 
 function getValueFromPath(object, path) {
   if (!object || !path) return undefined;
-  return path.split('.').reduce((acc, key) => (acc == null ? undefined : acc[key]), object);
+  return path.split('.').reduce((acc, key) => (acc === null || acc === undefined ? undefined : acc[key]), object);
 }
 
 function dispatchInputEvents(element) {
@@ -127,7 +127,7 @@ function setNativeValue(element, value) {
 function applyAutofilledStyle(element) {
   element.style.border = '2px solid #34a853';
   element.style.boxSizing = 'border-box';
-  if (!element.title || element.title === '') {
+  if (!element.title) {
     element.title = 'Autofilled';
   }
   element.dataset.formFillerAutofilled = 'true';
@@ -226,13 +226,19 @@ function matchField(questionText) {
 }
 
 function resolveProfileData(sourceData) {
-  if (sourceData && sourceData.profiles && sourceData.activeProfile) {
-    return sourceData.profiles[sourceData.activeProfile] || sourceData.profiles.default || null;
-  }
-  if (sourceData && sourceData.profiles && sourceData.profiles.default) {
-    return sourceData.profiles.default;
+  const profiles = sourceData?.profiles;
+  if (profiles) {
+    if (sourceData?.activeProfile && profiles[sourceData.activeProfile]) {
+      return profiles[sourceData.activeProfile];
+    }
+    if (profiles.default) return profiles.default;
+    return null;
   }
   return sourceData || null;
+}
+
+function hasUsableValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== '';
 }
 
 function resolveAnswerByQuestion(questionTitle, sourceData) {
@@ -243,7 +249,7 @@ function resolveAnswerByQuestion(questionTitle, sourceData) {
     const mappedPath = matchField(questionTitle);
     if (mappedPath) {
       const mappedValue = getValueFromPath(profileData, mappedPath);
-      if (mappedValue !== undefined && mappedValue !== null && String(mappedValue).trim() !== '') {
+      if (hasUsableValue(mappedValue)) {
         console.log(`[FormFiller] mapped field: "${questionTitle}" -> "${mappedPath}"`);
         return { key: mappedPath, value: mappedValue };
       }
@@ -266,11 +272,6 @@ function resolveAnswerByQuestion(questionTitle, sourceData) {
   }
 
   return { key: null, value: null };
-}
-
-function isTextLikeFilled(item) {
-  const textControl = queryFirst(item, SELECTORS.textInput) || queryFirst(item, SELECTORS.textarea);
-  return Boolean(textControl && normalizeText(textControl.value) !== '');
 }
 
 function isRadioFilled(item) {
@@ -409,7 +410,7 @@ async function fillForm(sourceData) {
     console.log('[FormFiller] mapped field:', key);
     console.log('[FormFiller] value used:', value);
 
-    if (value === null || value === undefined || String(value).trim() === '') {
+    if (!hasUsableValue(value)) {
       skipped++;
       continue;
     }
@@ -491,7 +492,9 @@ async function runAutofillWithRetry(sourceData, attempt = 0, force = false) {
     autofillInProgress = false;
     pendingRetryId = setTimeout(() => {
       pendingRetryId = null;
-      runAutofillWithRetry(sourceData, attempt + 1, force);
+      runAutofillWithRetry(sourceData, attempt + 1, force).catch((error) => {
+        console.error('[FormFiller] retry autofill failed:', error);
+      });
     }, RETRY_DELAY_MS);
     return { filled: 0, skipped: 0, errors: [] };
   }
@@ -513,14 +516,18 @@ function setupMutationObserver() {
   observer = new MutationObserver((mutations) => {
     const hasNewNodes = mutations.some((mutation) => mutation.addedNodes && mutation.addedNodes.length > 0);
     if (!hasNewNodes || autofillDone) return;
-    runAutofillWithRetry(userData);
+    runAutofillWithRetry(userData).catch((error) => {
+      console.error('[FormFiller] observer autofill failed:', error);
+    });
   });
   observer.observe(document.body, { childList: true, subtree: true });
   observerStarted = true;
 }
 
 setupMutationObserver();
-runAutofillWithRetry(userData);
+runAutofillWithRetry(userData).catch((error) => {
+  console.error('[FormFiller] initial autofill failed:', error);
+});
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const type = message?.type;
