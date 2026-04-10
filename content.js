@@ -182,7 +182,7 @@ function scrapeQuestions() {
           if (txt) options.push(txt);
         });
       } else {
-        document.querySelectorAll('[role="option"]').forEach((opt) => {
+        item.querySelectorAll('[role="option"]').forEach((opt) => {
           const txt = getOptionLabel(opt);
           if (txt) options.push(txt);
         });
@@ -489,13 +489,13 @@ async function runAutofillWithRetry(sourceData, attempt = 0, force = false) {
       autofillInProgress = false;
       return { filled: 0, skipped: 0, errors: [] };
     }
-    autofillInProgress = false;
     pendingRetryId = setTimeout(() => {
       pendingRetryId = null;
       runAutofillWithRetry(sourceData, attempt + 1, force).catch((error) => {
         console.error('[FormFiller] retry autofill failed:', error);
       });
     }, RETRY_DELAY_MS);
+    autofillInProgress = false;
     return { filled: 0, skipped: 0, errors: [] };
   }
 
