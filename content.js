@@ -78,7 +78,7 @@ const FIELD_RULES = [
 
 const RETRY_DELAY_MS = 800;
 const MAX_AUTOFILL_RETRIES = 8;
-const DEBUG_MODE = true;
+const DEBUG_MODE = false;
 let observer = null;
 let observerStarted = false;
 let autofillDone = false;
@@ -413,9 +413,7 @@ async function fillForm(sourceData) {
     if (!questionTitle) continue;
 
     const { key, value } = resolveAnswerByQuestion(questionTitle, sourceData);
-    debugLog('[FormFiller] detected question:', questionTitle);
-    debugLog('[FormFiller] mapped field:', key);
-    debugLog('[FormFiller] value used:', value);
+    debugLog('[FormFiller] fill context:', { question: questionTitle, mappedField: key, value });
 
     if (!hasUsableValue(value)) {
       skipped++;
