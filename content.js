@@ -78,11 +78,18 @@ const FIELD_RULES = [
 
 const RETRY_DELAY_MS = 800;
 const MAX_AUTOFILL_RETRIES = 8;
+const DEBUG_MODE = true;
 let observer = null;
 let observerStarted = false;
 let autofillDone = false;
 let autofillInProgress = false;
 let pendingRetryId = null;
+
+function debugLog(...args) {
+  if (DEBUG_MODE) {
+    console.log(...args);
+  }
+}
 
 function queryFirst(root, selectorList) {
   for (const sel of selectorList) {
@@ -188,7 +195,7 @@ function scrapeQuestions() {
         });
       }
     }
-    console.log(`[FormFiller] detected question: "${title}" (${type})`);
+    debugLog(`[FormFiller] detected question: "${title}" (${type})`);
     questions.push({ title, type, options });
   }
   return questions;
@@ -250,7 +257,7 @@ function resolveAnswerByQuestion(questionTitle, sourceData) {
     if (mappedPath) {
       const mappedValue = getValueFromPath(profileData, mappedPath);
       if (hasUsableValue(mappedValue)) {
-        console.log(`[FormFiller] mapped field: "${questionTitle}" -> "${mappedPath}"`);
+        debugLog(`[FormFiller] mapped field: "${questionTitle}" -> "${mappedPath}"`);
         return { key: mappedPath, value: mappedValue };
       }
     }
@@ -399,16 +406,16 @@ async function fillForm(sourceData) {
   let skipped = 0;
   const errors = [];
 
-  console.log('[FormFiller] start fill, items:', items.length);
+  debugLog('[FormFiller] start fill, items:', items.length);
 
   for (const item of items) {
     const questionTitle = getQuestionTitle(item);
     if (!questionTitle) continue;
 
     const { key, value } = resolveAnswerByQuestion(questionTitle, sourceData);
-    console.log('[FormFiller] detected question:', questionTitle);
-    console.log('[FormFiller] mapped field:', key);
-    console.log('[FormFiller] value used:', value);
+    debugLog('[FormFiller] detected question:', questionTitle);
+    debugLog('[FormFiller] mapped field:', key);
+    debugLog('[FormFiller] value used:', value);
 
     if (!hasUsableValue(value)) {
       skipped++;
