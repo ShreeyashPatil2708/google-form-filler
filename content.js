@@ -1,50 +1,96 @@
 // content.js — Google Form Filler content script
-// Detects questions, fills answers, and communicates with the popup.
 
 console.log('[FormFiller] Content script loaded on:', window.location.href);
 
-// ---------------------------------------------------------------------------
-// DOM Selectors
-// Google Forms uses long class names that can change between deployments.
-// We keep a prioritised list of selectors so the filler degrades gracefully.
-// ---------------------------------------------------------------------------
-const SELECTORS = {
-  // Container for each question / item
-  questionItem: [
-    '.freebirdFormviewerViewItemsItemItem',
-    '[data-params]',
-    '.freebirdFormviewerComponentsQuestionBaseRoot',
-  ],
-  // Question title / label
-  questionTitle: [
-    '.freebirdFormviewerViewItemsItemItemTitle',
-    '.freebirdFormviewerComponentsQuestionBaseTitle',
-    '[role="heading"]',
-  ],
-  // Short-answer text input
-  shortAnswer: ['input.whsOnd', 'input[type="text"]'],
-  // Long-answer textarea
-  longAnswer: ['textarea.KHxj8b', 'textarea'],
-  // Radio / multiple-choice option
-  radioOption: ['[role="radio"]'],
-  // Checkbox option
-  checkboxOption: ['[role="checkbox"]'],
-  // Dropdown trigger button
-  dropdownTrigger: ['[role="listbox"] [role="option"]', 'select'],
-  // The overall dropdown container
-  dropdownContainer: ['[role="listbox"]'],
+const userData = {
+  profiles: {
+    default: {
+      prn: '1234567890',
+      full_name: 'Shreeyash Patil',
+      mobile_number: '9876543210',
+      dob: '2004-05-15',
+      gender: 'Male',
+      coding_profiles: {
+        leetcode: 'https://leetcode.com/yourusername',
+        gfg: 'https://geeksforgeeks.org/user/yourusername',
+        hackerrank: 'https://hackerrank.com/yourusername'
+      },
+      linkedin: 'https://linkedin.com/in/yourusername',
+      github: 'https://github.com/yourusername',
+      cocubes_score: '850',
+      college_name: 'Pimpri Chinchwad College of Engineering',
+      academic_scores: {
+        class_10_percentage: '95',
+        class_12_percentage: '90',
+        btech_aggregate: '8.5 CGPA'
+      },
+      graduation_year: '2027',
+      technical_achievements: 'Participated in hackathons and built ML/cloud projects',
+      personal_achievements: 'Leadership roles and event management',
+      projects: 'Crop Price Prediction, SaaS ML Trainer, Cloud Benchmarking'
+    }
+  },
+  activeProfile: 'default'
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const SELECTORS = {
+  questionItem: [
+    '.Qr7Oae',
+    '.freebirdFormviewerViewItemsItemItem',
+    '.freebirdFormviewerComponentsQuestionBaseRoot',
+    '[data-params]'
+  ],
+  questionTitle: [
+    '.M7eMe',
+    '.HoXoMd',
+    '.freebirdFormviewerViewItemsItemItemTitle',
+    '.freebirdFormviewerComponentsQuestionBaseTitle',
+    '[role="heading"]'
+  ],
+  textInput: ['input.whsOnd', 'input[type="text"]'],
+  textarea: ['textarea.KHxj8b', 'textarea'],
+  radio: ['[role="radio"]'],
+  checkbox: ['[role="checkbox"]'],
+  dropdown: ['[role="listbox"]', 'select']
+};
 
-/**
- * Return the first matching element inside `root` using a list of selectors.
- * @param {Element|Document} root
- * @param {string[]} selectorList
- * @returns {Element|null}
- */
+const FIELD_RULES = [
+  { path: 'prn', terms: ['prn', 'roll number', 'roll no', 'rollno'] },
+  { path: 'full_name', terms: ['full name', 'your name', 'name'] },
+  { path: 'mobile_number', terms: ['mobile', 'contact number', 'phone number', 'phone'] },
+  { path: 'dob', terms: ['dob', 'date of birth', 'birth date'] },
+  { path: 'gender', terms: ['gender', 'sex'] },
+  { path: 'linkedin', terms: ['linkedin'] },
+  { path: 'github', terms: ['github', 'git hub'] },
+  { path: 'coding_profiles.leetcode', terms: ['leetcode', 'leet code'] },
+  { path: 'coding_profiles.gfg', terms: ['gfg', 'geeksforgeeks', 'geeks for geeks'] },
+  { path: 'coding_profiles.hackerrank', terms: ['hackerrank', 'hacker rank'] },
+  { path: 'academic_scores.class_10_percentage', terms: ['10th', 'class 10', 'ssc'] },
+  { path: 'academic_scores.class_12_percentage', terms: ['12th', 'class 12', 'hsc'] },
+  { path: 'academic_scores.btech_aggregate', terms: ['btech', 'cgpa', 'aggregate'] },
+  { path: 'graduation_year', terms: ['graduation year', 'passing year'] },
+  { path: 'projects', terms: ['projects', 'project details'] },
+  { path: 'technical_achievements', terms: ['technical achievements', 'technical achievement'] },
+  { path: 'personal_achievements', terms: ['personal achievements', 'personal achievement'] },
+  { path: 'college_name', terms: ['college name', 'institute name', 'college'] },
+  { path: 'cocubes_score', terms: ['cocubes', 'co-cubes', 'cocubes score'] }
+];
+
+const RETRY_DELAY_MS = 800;
+const MAX_AUTOFILL_RETRIES = 8;
+const DEBUG_MODE = false;
+let observer = null;
+let observerStarted = false;
+let autofillDone = false;
+let autofillInProgress = false;
+let pendingRetryId = null;
+
+function debugLog(...args) {
+  if (DEBUG_MODE) {
+    console.log(...args);
+  }
+}
+
 function queryFirst(root, selectorList) {
   for (const sel of selectorList) {
     const el = root.querySelector(sel);
@@ -53,357 +99,462 @@ function queryFirst(root, selectorList) {
   return null;
 }
 
-/**
- * Return all matching elements inside `root` using a list of selectors.
- * @param {Element|Document} root
- * @param {string[]} selectorList
- * @returns {Element[]}
- */
 function queryAll(root, selectorList) {
+  const all = [];
   for (const sel of selectorList) {
-    const els = Array.from(root.querySelectorAll(sel));
-    if (els.length > 0) return els;
+    all.push(...Array.from(root.querySelectorAll(sel)));
   }
-  return [];
+  return Array.from(new Set(all));
 }
 
-/**
- * Normalize a string for fuzzy matching (lowercase, trimmed, collapsed spaces).
- * @param {string} str
- * @returns {string}
- */
-function normalize(str) {
-  return (str || '').toLowerCase().trim().replace(/\s+/g, ' ');
+function normalizeText(value) {
+  return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-/**
- * Simulate a native React/Angular input change so Google Forms registers the value.
- * @param {HTMLInputElement|HTMLTextAreaElement} el
- * @param {string} value
- */
-function nativeInputValue(el, value) {
-  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-    el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
-    'value'
-  )?.set;
+function getValueFromPath(object, path) {
+  if (!object || !path) return undefined;
+  return path.split('.').reduce((acc, key) => (acc === null || acc === undefined ? undefined : acc[key]), object);
+}
 
-  if (nativeInputValueSetter) {
-    nativeInputValueSetter.call(el, value);
+function dispatchInputEvents(element) {
+  element.dispatchEvent(new Event('input', { bubbles: true }));
+  element.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function setNativeValue(element, value) {
+  const proto = element.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+  if (setter) {
+    setter.call(element, value);
   } else {
-    el.value = value;
+    element.value = value;
   }
-
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-// ---------------------------------------------------------------------------
-// Question detection
-// ---------------------------------------------------------------------------
+function applyAutofilledStyle(element) {
+  element.style.border = '2px solid #34a853';
+  element.style.boxSizing = 'border-box';
+  if (!element.title) {
+    element.title = 'Autofilled';
+  }
+  element.dataset.formFillerAutofilled = 'true';
+}
 
-/**
- * Identify the type of a question item element.
- * @param {Element} item
- * @returns {'short-answer'|'long-answer'|'multiple-choice'|'checkbox'|'dropdown'|'unknown'}
- */
-function detectQuestionType(item) {
-  if (queryFirst(item, SELECTORS.shortAnswer)) return 'short-answer';
-  if (queryFirst(item, SELECTORS.longAnswer)) return 'long-answer';
-  if (queryAll(item, SELECTORS.checkboxOption).length > 0) return 'checkbox';
-  if (queryAll(item, SELECTORS.radioOption).length > 0) return 'multiple-choice';
-  if (item.querySelector('[role="listbox"]') || item.querySelector('select')) return 'dropdown';
+function getQuestionTitle(item) {
+  const titleEl = queryFirst(item, SELECTORS.questionTitle);
+  if (!titleEl) return '';
+  const raw = titleEl.textContent || '';
+  return raw.replace(/\*/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function getQuestionType(item) {
+  if (queryFirst(item, SELECTORS.textInput)) return 'text';
+  if (queryFirst(item, SELECTORS.textarea)) return 'textarea';
+  if (queryAll(item, SELECTORS.radio).length) return 'radio';
+  if (queryAll(item, SELECTORS.checkbox).length) return 'checkbox';
+  if (queryFirst(item, SELECTORS.dropdown)) return 'dropdown';
   return 'unknown';
 }
 
-/**
- * Extract the question title text from an item element.
- * @param {Element} item
- * @returns {string}
- */
-function extractTitle(item) {
-  const el = queryFirst(item, SELECTORS.questionTitle);
-  return el ? el.textContent.trim() : '';
+function getOptionLabel(option) {
+  const label = option.getAttribute('aria-label') || option.getAttribute('data-value') || option.textContent || '';
+  return label.replace(/\s+/g, ' ').trim();
 }
 
-/**
- * Scrape all questions from the current Google Form page.
- * @returns {{ title: string, type: string, options: string[] }[]}
- */
 function scrapeQuestions() {
   const questions = [];
   const items = queryAll(document, SELECTORS.questionItem);
-
-  console.log(`[FormFiller] Found ${items.length} question item(s).`);
-
   for (const item of items) {
-    const title = extractTitle(item);
-    if (!title) continue; // Skip non-question containers (e.g. section headers without inputs)
-
-    const type = detectQuestionType(item);
+    const title = getQuestionTitle(item);
+    if (!title) continue;
+    const type = getQuestionType(item);
     const options = [];
-
-    if (type === 'multiple-choice' || type === 'checkbox') {
-      const optionEls = queryAll(item, type === 'checkbox' ? SELECTORS.checkboxOption : SELECTORS.radioOption);
-      for (const opt of optionEls) {
-        const label = opt.getAttribute('data-value') || opt.textContent.trim();
-        if (label) options.push(label);
-      }
+    if (type === 'radio') {
+      queryAll(item, SELECTORS.radio).forEach((opt) => {
+        const txt = getOptionLabel(opt);
+        if (txt) options.push(txt);
+      });
     }
-
+    if (type === 'checkbox') {
+      queryAll(item, SELECTORS.checkbox).forEach((opt) => {
+        const txt = getOptionLabel(opt);
+        if (txt) options.push(txt);
+      });
+    }
     if (type === 'dropdown') {
-      const sel = item.querySelector('select');
-      if (sel) {
-        for (const opt of sel.options) {
-          if (opt.value) options.push(opt.text.trim());
-        }
+      const select = item.querySelector('select');
+      if (select) {
+        Array.from(select.options).forEach((opt) => {
+          const txt = (opt.textContent || '').trim();
+          if (txt) options.push(txt);
+        });
       } else {
-        const optionEls = item.querySelectorAll('[role="option"]');
-        for (const opt of optionEls) {
-          const label = opt.getAttribute('data-value') || opt.textContent.trim();
-          if (label) options.push(label);
-        }
+        item.querySelectorAll('[role="option"]').forEach((opt) => {
+          const txt = getOptionLabel(opt);
+          if (txt) options.push(txt);
+        });
       }
     }
-
+    debugLog(`[FormFiller] detected question: "${title}" (${type})`);
     questions.push({ title, type, options });
-    console.log(`[FormFiller] Question detected — "${title}" (${type})`);
   }
-
   return questions;
 }
 
-// ---------------------------------------------------------------------------
-// Form filling
-// ---------------------------------------------------------------------------
+function matchField(questionText) {
+  const text = normalizeText(questionText);
+  let bestPath = null;
+  let bestScore = 0;
 
-/**
- * Fill a short-answer or long-answer field.
- * @param {Element} item
- * @param {string} value
- */
-function fillTextInput(item, value) {
-  const input = queryFirst(item, SELECTORS.shortAnswer) || queryFirst(item, SELECTORS.longAnswer);
-  if (!input) {
-    console.warn('[FormFiller] No text input found in item.');
-    return;
-  }
-  input.focus();
-  nativeInputValue(input, String(value));
-  console.log(`[FormFiller] Filled text input with: "${value}"`);
-}
-
-/**
- * Select a radio option by matching text or data-value.
- * @param {Element} item
- * @param {string} value
- */
-function fillRadio(item, value) {
-  const options = queryAll(item, SELECTORS.radioOption);
-  const target = normalize(value);
-
-  for (const opt of options) {
-    const label = normalize(opt.getAttribute('data-value') || opt.textContent);
-    if (label === target || label.includes(target)) {
-      opt.click();
-      console.log(`[FormFiller] Selected radio option: "${opt.textContent.trim()}"`);
-      return;
-    }
-  }
-  console.warn(`[FormFiller] Radio option not found: "${value}"`);
-}
-
-/**
- * Select one or more checkboxes by matching text or data-value.
- * @param {Element} item
- * @param {string|string[]} values
- */
-function fillCheckbox(item, values) {
-  const targets = (Array.isArray(values) ? values : [values]).map(normalize);
-  const options = queryAll(item, SELECTORS.checkboxOption);
-
-  for (const opt of options) {
-    const label = normalize(opt.getAttribute('data-value') || opt.textContent);
-    const shouldCheck = targets.some((t) => label === t || label.includes(t));
-    const isChecked = opt.getAttribute('aria-checked') === 'true';
-
-    if (shouldCheck && !isChecked) {
-      opt.click();
-      console.log(`[FormFiller] Checked checkbox: "${opt.textContent.trim()}"`);
-    } else if (!shouldCheck && isChecked) {
-      opt.click();
-      console.log(`[FormFiller] Unchecked checkbox: "${opt.textContent.trim()}"`);
-    }
-  }
-}
-
-/**
- * Select a dropdown option.
- * @param {Element} item
- * @param {string} value
- */
-async function fillDropdown(item, value) {
-  const sel = item.querySelector('select');
-  if (sel) {
-    const target = normalize(value);
-    for (const opt of sel.options) {
-      if (normalize(opt.text) === target || normalize(opt.value) === target) {
-        sel.value = opt.value;
-        sel.dispatchEvent(new Event('change', { bubbles: true }));
-        console.log(`[FormFiller] Selected native dropdown: "${opt.text}"`);
-        return;
+  for (const rule of FIELD_RULES) {
+    for (const term of rule.terms) {
+      const normalizedTerm = normalizeText(term);
+      if (!normalizedTerm) continue;
+      if (text === normalizedTerm) {
+        return rule.path;
+      }
+      if (text.includes(normalizedTerm)) {
+        const score = normalizedTerm.length + 20;
+        if (score > bestScore) {
+          bestScore = score;
+          bestPath = rule.path;
+        }
+      } else if (normalizedTerm.includes(text) && text.length >= 4) {
+        const score = text.length + 8;
+        if (score > bestScore) {
+          bestScore = score;
+          bestPath = rule.path;
+        }
       }
     }
-    console.warn(`[FormFiller] Dropdown option not found: "${value}"`);
-    return;
   }
 
-  // Custom Google Forms dropdown
-  const trigger = item.querySelector('[role="listbox"]');
-  if (!trigger) {
-    console.warn('[FormFiller] No dropdown found in item.');
-    return;
+  return bestPath;
+}
+
+function resolveProfileData(sourceData) {
+  const profiles = sourceData?.profiles;
+  if (profiles) {
+    if (sourceData?.activeProfile && profiles[sourceData.activeProfile]) {
+      return profiles[sourceData.activeProfile];
+    }
+    if (profiles.default) return profiles.default;
+    return null;
   }
+  return sourceData || null;
+}
 
-  trigger.click(); // open the dropdown
-  await new Promise((r) => setTimeout(r, 300));
+function hasUsableValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== '';
+}
 
-  const optionEls = Array.from(document.querySelectorAll('[role="option"]'));
-  const target = normalize(value);
+function resolveAnswerByQuestion(questionTitle, sourceData) {
+  const normalizedQuestion = normalizeText(questionTitle);
+  const profileData = resolveProfileData(sourceData);
 
-  for (const opt of optionEls) {
-    const label = normalize(opt.getAttribute('data-value') || opt.textContent);
-    if (label === target || label.includes(target)) {
-      opt.click();
-      console.log(`[FormFiller] Selected custom dropdown option: "${opt.textContent.trim()}"`);
-      return;
+  if (profileData) {
+    const mappedPath = matchField(questionTitle);
+    if (mappedPath) {
+      const mappedValue = getValueFromPath(profileData, mappedPath);
+      if (hasUsableValue(mappedValue)) {
+        debugLog(`[FormFiller] mapped field: "${questionTitle}" -> "${mappedPath}"`);
+        return { key: mappedPath, value: mappedValue };
+      }
     }
   }
 
-  // Close the dropdown if nothing was selected
-  trigger.click();
-  console.warn(`[FormFiller] Custom dropdown option not found: "${value}"`);
+  if (sourceData && typeof sourceData === 'object' && !sourceData.profiles) {
+    const keys = Object.keys(sourceData);
+    for (const key of keys) {
+      if (normalizeText(key) === normalizedQuestion) {
+        return { key, value: sourceData[key] };
+      }
+    }
+    for (const key of keys) {
+      const normalizedKey = normalizeText(key);
+      if (normalizedQuestion.includes(normalizedKey) || normalizedKey.includes(normalizedQuestion)) {
+        return { key, value: sourceData[key] };
+      }
+    }
+  }
+
+  return { key: null, value: null };
 }
 
-/**
- * Fill the entire form using a data map of question title → answer.
- * @param {{ [questionTitle: string]: string | string[] }} data
- * @returns {{ filled: number, skipped: number, errors: string[] }}
- */
-async function fillForm(data) {
+function isRadioFilled(item) {
+  return queryAll(item, SELECTORS.radio).some((opt) => opt.getAttribute('aria-checked') === 'true');
+}
+
+function isCheckboxFilled(item) {
+  return queryAll(item, SELECTORS.checkbox).some((opt) => opt.getAttribute('aria-checked') === 'true');
+}
+
+function isDropdownFilled(item) {
+  const select = item.querySelector('select');
+  if (select) {
+    const selected = select.options[select.selectedIndex];
+    if (!selected) return false;
+    const selectedText = normalizeText(selected.textContent);
+    return selectedText !== '' && !['choose', 'select', 'please select'].includes(selectedText);
+  }
+  const listbox = item.querySelector('[role="listbox"]');
+  if (!listbox) return false;
+  const val = normalizeText(listbox.getAttribute('aria-label') || listbox.textContent || '');
+  return val !== '' && !val.startsWith('choose') && !val.startsWith('select');
+}
+
+function parseMultiValues(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string') return [String(value)];
+  return value
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+function findBestMatchingOption(options, value) {
+  const target = normalizeText(value);
+  if (!target) return null;
+  for (const option of options) {
+    const label = normalizeText(getOptionLabel(option));
+    if (!label) continue;
+    if (label === target || label.includes(target) || target.includes(label)) return option;
+  }
+  return null;
+}
+
+function fillTextInput(item, value) {
+  const input = queryFirst(item, SELECTORS.textInput) || queryFirst(item, SELECTORS.textarea);
+  if (!input || normalizeText(input.value) !== '') return false;
+  const strValue = String(value ?? '');
+  if (!strValue.trim()) return false;
+  input.focus();
+  setNativeValue(input, strValue);
+  dispatchInputEvents(input);
+  applyAutofilledStyle(input);
+  return true;
+}
+
+function fillRadio(item, value) {
+  if (isRadioFilled(item)) return false;
+  const options = queryAll(item, SELECTORS.radio);
+  const match = findBestMatchingOption(options, value);
+  if (!match) return false;
+  match.click();
+  applyAutofilledStyle(match);
+  return true;
+}
+
+function fillCheckbox(item, value) {
+  if (isCheckboxFilled(item)) return false;
+  const targets = parseMultiValues(value);
+  if (!targets.length) return false;
+  const options = queryAll(item, SELECTORS.checkbox);
+  let changed = false;
+  for (const target of targets) {
+    const match = findBestMatchingOption(options, target);
+    if (match && match.getAttribute('aria-checked') !== 'true') {
+      match.click();
+      applyAutofilledStyle(match);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+async function fillDropdown(item, value) {
+  if (isDropdownFilled(item)) return false;
+  const target = String(value ?? '').trim();
+  if (!target) return false;
+
+  const select = item.querySelector('select');
+  if (select) {
+    const option = Array.from(select.options).find((opt) => {
+      const txt = normalizeText(opt.textContent);
+      const val = normalizeText(opt.value);
+      const normalizedTarget = normalizeText(target);
+      return txt === normalizedTarget || val === normalizedTarget || txt.includes(normalizedTarget);
+    });
+    if (!option) return false;
+    select.value = option.value;
+    dispatchInputEvents(select);
+    applyAutofilledStyle(select);
+    return true;
+  }
+
+  const trigger = item.querySelector('[role="listbox"]');
+  if (!trigger) return false;
+
+  trigger.click();
+  await new Promise((resolve) => setTimeout(resolve, 250));
+
+  const options = Array.from(document.querySelectorAll('[role="option"]'));
+  const match = findBestMatchingOption(options, target);
+  if (!match) {
+    trigger.click();
+    return false;
+  }
+
+  match.click();
+  applyAutofilledStyle(trigger);
+  return true;
+}
+
+async function fillForm(sourceData) {
   const items = queryAll(document, SELECTORS.questionItem);
   let filled = 0;
   let skipped = 0;
   const errors = [];
 
-  console.log('[FormFiller] Starting form fill with data:', data);
+  debugLog('[FormFiller] start fill, items:', items.length);
 
   for (const item of items) {
-    const title = extractTitle(item);
-    if (!title) continue;
+    const questionTitle = getQuestionTitle(item);
+    if (!questionTitle) continue;
 
-    // Look up the answer using exact then fuzzy matching
-    const normTitle = normalize(title);
-    let answer = null;
-    let matchedKey = null;
+    const { key, value } = resolveAnswerByQuestion(questionTitle, sourceData);
+    debugLog('[FormFiller] fill context:', { question: questionTitle, mappedField: key, value });
 
-    for (const key of Object.keys(data)) {
-      if (normalize(key) === normTitle) {
-        answer = data[key];
-        matchedKey = key;
-        break;
-      }
-    }
-
-    // Fallback: partial match
-    if (answer === null) {
-      for (const key of Object.keys(data)) {
-        if (normTitle.includes(normalize(key)) || normalize(key).includes(normTitle)) {
-          answer = data[key];
-          matchedKey = key;
-          break;
-        }
-      }
-    }
-
-    if (answer === null) {
-      console.log(`[FormFiller] No data for question: "${title}" — skipping.`);
+    if (!hasUsableValue(value)) {
       skipped++;
       continue;
     }
 
-    const type = detectQuestionType(item);
-    console.log(`[FormFiller] Filling "${title}" (${type}) with:`, answer);
-
+    const type = getQuestionType(item);
     try {
-      if (type === 'short-answer' || type === 'long-answer') {
-        fillTextInput(item, answer);
-      } else if (type === 'multiple-choice') {
-        fillRadio(item, answer);
+      let didFill = false;
+      if (type === 'text' || type === 'textarea') {
+        didFill = fillTextInput(item, value);
+      } else if (type === 'radio') {
+        didFill = fillRadio(item, value);
       } else if (type === 'checkbox') {
-        fillCheckbox(item, answer);
+        didFill = fillCheckbox(item, value);
       } else if (type === 'dropdown') {
-        await fillDropdown(item, answer);
+        didFill = await fillDropdown(item, value);
       } else {
-        console.warn(`[FormFiller] Unknown question type for: "${title}"`);
         skipped++;
         continue;
       }
-      filled++;
-    } catch (err) {
-      console.error(`[FormFiller] Error filling "${title}":`, err);
-      errors.push(`"${title}": ${err.message}`);
+
+      if (didFill) {
+        filled++;
+      } else {
+        skipped++;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`"${questionTitle}": ${message}`);
     }
   }
 
-  console.log(`[FormFiller] Fill complete. filled=${filled}, skipped=${skipped}, errors=${errors.length}`);
   return { filled, skipped, errors };
 }
 
-/**
- * Clear all text inputs and deselect all choices in the form.
- */
 function clearForm() {
-  console.log('[FormFiller] Clearing form...');
-
-  // Clear text inputs and textareas
   document.querySelectorAll('input[type="text"], textarea').forEach((el) => {
-    if (el.value) {
-      el.focus();
-      nativeInputValue(el, '');
+    if (normalizeText(el.value) !== '') {
+      setNativeValue(el, '');
+      dispatchInputEvents(el);
+      delete el.dataset.formFillerAutofilled;
+      el.style.border = '';
+      if (el.title === 'Autofilled') {
+        el.title = '';
+      }
     }
   });
-
-  // Deselect radio buttons
-  document.querySelectorAll('[role="radio"][aria-checked="true"]').forEach((el) => el.click());
-
-  // Deselect checkboxes
-  document.querySelectorAll('[role="checkbox"][aria-checked="true"]').forEach((el) => el.click());
-
-  console.log('[FormFiller] Form cleared.');
+  document.querySelectorAll('[role="radio"][aria-checked="true"], [role="checkbox"][aria-checked="true"]').forEach((el) => {
+    el.click();
+    delete el.dataset.formFillerAutofilled;
+    el.style.border = '';
+    if (el.title === 'Autofilled') {
+      el.title = '';
+    }
+  });
 }
 
-// ---------------------------------------------------------------------------
-// Message listener
-// ---------------------------------------------------------------------------
+function stopObserverIfFinished() {
+  if (observer && autofillDone) {
+    observer.disconnect();
+    observer = null;
+    observerStarted = false;
+    if (pendingRetryId) {
+      clearTimeout(pendingRetryId);
+      pendingRetryId = null;
+    }
+  }
+}
+
+async function runAutofillWithRetry(sourceData, attempt = 0, force = false) {
+  if (autofillInProgress || (autofillDone && !force)) return { filled: 0, skipped: 0, errors: [] };
+  autofillInProgress = true;
+
+  const items = queryAll(document, SELECTORS.questionItem);
+  if (!items.length && attempt < MAX_AUTOFILL_RETRIES) {
+    if (pendingRetryId) {
+      autofillInProgress = false;
+      return { filled: 0, skipped: 0, errors: [] };
+    }
+    pendingRetryId = setTimeout(() => {
+      pendingRetryId = null;
+      runAutofillWithRetry(sourceData, attempt + 1, force).catch((error) => {
+        console.error('[FormFiller] retry autofill failed:', error);
+      });
+    }, RETRY_DELAY_MS);
+    autofillInProgress = false;
+    return { filled: 0, skipped: 0, errors: [] };
+  }
+
+  if (pendingRetryId) {
+    clearTimeout(pendingRetryId);
+    pendingRetryId = null;
+  }
+
+  const result = await fillForm(sourceData);
+  autofillInProgress = false;
+  autofillDone = true;
+  stopObserverIfFinished();
+  return result;
+}
+
+function setupMutationObserver() {
+  if (observerStarted || autofillDone) return;
+  observer = new MutationObserver((mutations) => {
+    const hasNewNodes = mutations.some((mutation) => mutation.addedNodes && mutation.addedNodes.length > 0);
+    if (!hasNewNodes || autofillDone) return;
+    runAutofillWithRetry(userData).catch((error) => {
+      console.error('[FormFiller] observer autofill failed:', error);
+    });
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  observerStarted = true;
+}
+
+setupMutationObserver();
+runAutofillWithRetry(userData).catch((error) => {
+  console.error('[FormFiller] initial autofill failed:', error);
+});
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  console.log('[FormFiller] Content script received message:', message.type);
+  const type = message?.type;
+  const action = message?.action;
 
-  if (message.type === 'SCRAPE_QUESTIONS') {
-    const questions = scrapeQuestions();
-    sendResponse({ success: true, questions });
+  if (type === 'SCRAPE_QUESTIONS') {
+    sendResponse({ success: true, questions: scrapeQuestions() });
     return true;
   }
 
-  if (message.type === 'FILL_FORM') {
-    fillForm(message.data).then((result) => {
+  if (type === 'FILL_FORM' || action === 'fillForm') {
+    const sourceData = message.data || message.userData || userData;
+    runAutofillWithRetry(sourceData, 0, true).then((result) => {
       sendResponse({ success: true, ...result });
     });
-    return true; // async
+    return true;
   }
 
-  if (message.type === 'CLEAR_FORM') {
+  if (type === 'CLEAR_FORM') {
     clearForm();
+    autofillDone = false;
+    setupMutationObserver();
     sendResponse({ success: true });
     return true;
   }

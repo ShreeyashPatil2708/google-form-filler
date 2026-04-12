@@ -117,7 +117,7 @@ btnFill.addEventListener('click', async () => {
   showStatus('Filling form…', 'info', 0);
 
   try {
-    const result = await sendToContentScript({ type: 'FILL_FORM', data });
+    const result = await sendToContentScript({ type: 'FILL_FORM', action: 'fillForm', data });
     if (result.success) {
       const msg = `Filled ${result.filled} field(s)` +
         (result.skipped > 0 ? `, skipped ${result.skipped}` : '') +
