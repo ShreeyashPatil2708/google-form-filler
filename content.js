@@ -77,6 +77,11 @@ const FIELD_RULES = [
 const RETRY_DELAY_MS = 800;
 const MAX_AUTOFILL_RETRIES = 8;
 const DEBUG_MODE = true;
+const TERM_WORD_OVERLAP_SCORE = 7;
+const TERM_LENGTH_BONUS_CAP = 20;
+const OPTION_WORD_MATCH_SCORE = 10;
+const OPTION_FIRST_WORD_BONUS = 5;
+const OPTION_FIRST_KEYWORD_SCORE = 1;
 let observer = null;
 let observerStarted = false;
 let autofillDone = false;
@@ -249,7 +254,7 @@ function matchField(questionText) {
         textWords.some((textWord) => textWord === termWord || textWord.includes(termWord) || termWord.includes(textWord))
       );
       if (overlappingWords.length > 0) {
-        const score = overlappingWords.length * 7 + Math.min(normalizedTerm.length, 20);
+        const score = overlappingWords.length * TERM_WORD_OVERLAP_SCORE + Math.min(normalizedTerm.length, TERM_LENGTH_BONUS_CAP);
         if (score > bestScore) {
           bestScore = score;
           bestPath = rule.path;
@@ -369,7 +374,9 @@ function findBestMatchingOption(options, value) {
       labelWords.some((labelWord) => labelWord === targetWord || labelWord.includes(targetWord) || targetWord.includes(labelWord))
     );
     if (overlappingWords.length > 0) {
-      const score = overlappingWords.length * 10 + (labelWords[0] && targetWords[0] && labelWords[0] === targetWords[0] ? 5 : 0);
+      const score =
+        overlappingWords.length * OPTION_WORD_MATCH_SCORE +
+        (labelWords[0] && targetWords[0] && labelWords[0] === targetWords[0] ? OPTION_FIRST_WORD_BONUS : 0);
       if (score > bestScore) {
         bestScore = score;
         bestOption = option;
@@ -377,7 +384,7 @@ function findBestMatchingOption(options, value) {
       continue;
     }
     if (targetWords[0] && label.includes(targetWords[0])) {
-      const score = targetWords[0].length;
+      const score = targetWords[0].length * OPTION_FIRST_KEYWORD_SCORE;
       if (score > bestScore) {
         bestScore = score;
         bestOption = option;
