@@ -43,3 +43,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+
+chrome.commands.onCommand.addListener((command) => {
+  if (command !== 'trigger-autofill') return;
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs[0];
+    if (!tab?.id || !tab.url) return;
+    if (!tab.url.startsWith('https://docs.google.com/forms/') && !tab.url.startsWith('https://forms.gle/')) return;
+
+    chrome.tabs.sendMessage(tab.id, { type: 'FILL_FORM', action: 'fillForm' }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('[FormFiller] Shortcut autofill failed:', chrome.runtime.lastError.message);
+      } else {
+        console.log('[FormFiller] Shortcut triggered autofill on tab:', tab.url);
+      }
+    });
+  });
+});

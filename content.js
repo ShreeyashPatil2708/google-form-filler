@@ -76,7 +76,12 @@ const FIELD_RULES = [
 
 const RETRY_DELAY_MS = 800;
 const MAX_AUTOFILL_RETRIES = 8;
-const DEBUG_MODE = false;
+const DEBUG_MODE = true;
+const TERM_WORD_OVERLAP_SCORE = 7;
+const TERM_LENGTH_BONUS_CAP = 20;
+const OPTION_WORD_MATCH_SCORE = 10;
+const OPTION_FIRST_WORD_BONUS = 5;
+const OPTION_FIRST_KEYWORD_SCORE = 1;
 let observer = null;
 let observerStarted = false;
 let autofillDone = false;
@@ -109,6 +114,13 @@ function normalizeText(value) {
   return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+function getNormalizedWords(value) {
+  return normalizeText(value)
+    .split(' ')
+    .map((word) => word.trim())
+    .filter((word) => word.length > 0);
+}
+
 function getValueFromPath(object, path) {
   if (!object || !path) return undefined;
   return path.split('.').reduce((acc, key) => (acc === null || acc === undefined ? undefined : acc[key]), object);
@@ -131,11 +143,21 @@ function setNativeValue(element, value) {
 
 function applyAutofilledStyle(element) {
   element.style.border = '2px solid #34a853';
+  element.style.backgroundColor = '#e6ffe6';
   element.style.boxSizing = 'border-box';
   if (!element.title) {
     element.title = 'Autofilled';
   }
   element.dataset.formFillerAutofilled = 'true';
+}
+
+function clearAutofilledStyle(element) {
+  delete element.dataset.formFillerAutofilled;
+  element.style.border = '';
+  element.style.backgroundColor = '';
+  if (element.title === 'Autofilled') {
+    element.title = '';
+  }
 }
 
 function getQuestionTitle(item) {
@@ -201,12 +223,15 @@ function scrapeQuestions() {
 
 function matchField(questionText) {
   const text = normalizeText(questionText);
+  const textWords = getNormalizedWords(text);
   let bestPath = null;
   let bestScore = 0;
 
   for (const rule of FIELD_RULES) {
     for (const term of rule.terms) {
       const normalizedTerm = normalizeText(term);
+      const termWords = getNormalizedWords(normalizedTerm);
+      const firstKeyword = termWords[0];
       if (!normalizedTerm) continue;
       if (text === normalizedTerm) {
         return rule.path;
@@ -217,8 +242,26 @@ function matchField(questionText) {
           bestScore = score;
           bestPath = rule.path;
         }
-      } else if (normalizedTerm.includes(text) && text.length >= 4) {
+      }
+      else if (normalizedTerm.includes(text) && text.length >= 4) {
         const score = text.length + 8;
+        if (score > bestScore) {
+          bestScore = score;
+          bestPath = rule.path;
+        }
+      }
+      const overlappingWords = termWords.filter((termWord) =>
+        textWords.some((textWord) => textWord === termWord || textWord.includes(termWord) || termWord.includes(textWord))
+      );
+      if (overlappingWords.length > 0) {
+        const score = overlappingWords.length * TERM_WORD_OVERLAP_SCORE + Math.min(normalizedTerm.length, TERM_LENGTH_BONUS_CAP);
+        if (score > bestScore) {
+          bestScore = score;
+          bestPath = rule.path;
+        }
+      }
+      if (firstKeyword && text.includes(firstKeyword)) {
+        const score = firstKeyword.length + 5;
         if (score > bestScore) {
           bestScore = score;
           bestPath = rule.path;
@@ -312,12 +355,44 @@ function parseMultiValues(value) {
 
 function findBestMatchingOption(options, value) {
   const target = normalizeText(value);
+  const targetWords = getNormalizedWords(target);
   if (!target) return null;
+
   for (const option of options) {
     const label = normalizeText(getOptionLabel(option));
     if (!label) continue;
     if (label === target || label.includes(target) || target.includes(label)) return option;
   }
+
+  let bestOption = null;
+  let bestScore = 0;
+  for (const option of options) {
+    const label = normalizeText(getOptionLabel(option));
+    if (!label) continue;
+    const labelWords = getNormalizedWords(label);
+    const overlappingWords = targetWords.filter((targetWord) =>
+      labelWords.some((labelWord) => labelWord === targetWord || labelWord.includes(targetWord) || targetWord.includes(labelWord))
+    );
+    if (overlappingWords.length > 0) {
+      const score =
+        overlappingWords.length * OPTION_WORD_MATCH_SCORE +
+        (labelWords[0] && targetWords[0] && labelWords[0] === targetWords[0] ? OPTION_FIRST_WORD_BONUS : 0);
+      if (score > bestScore) {
+        bestScore = score;
+        bestOption = option;
+      }
+      continue;
+    }
+    if (targetWords[0] && label.includes(targetWords[0])) {
+      const score = targetWords[0].length * OPTION_FIRST_KEYWORD_SCORE;
+      if (score > bestScore) {
+        bestScore = score;
+        bestOption = option;
+      }
+    }
+  }
+
+  if (bestOption) return bestOption;
   return null;
 }
 
@@ -384,7 +459,7 @@ async function fillDropdown(item, value) {
   if (!trigger) return false;
 
   trigger.click();
-  await new Promise((resolve) => setTimeout(resolve, 250));
+  await new Promise((resolve) => setTimeout(resolve, 500));
 
   const options = Array.from(document.querySelectorAll('[role="option"]'));
   const match = findBestMatchingOption(options, target);
@@ -453,20 +528,15 @@ function clearForm() {
     if (normalizeText(el.value) !== '') {
       setNativeValue(el, '');
       dispatchInputEvents(el);
-      delete el.dataset.formFillerAutofilled;
-      el.style.border = '';
-      if (el.title === 'Autofilled') {
-        el.title = '';
-      }
     }
+    clearAutofilledStyle(el);
   });
   document.querySelectorAll('[role="radio"][aria-checked="true"], [role="checkbox"][aria-checked="true"]').forEach((el) => {
     el.click();
-    delete el.dataset.formFillerAutofilled;
-    el.style.border = '';
-    if (el.title === 'Autofilled') {
-      el.title = '';
-    }
+    clearAutofilledStyle(el);
+  });
+  document.querySelectorAll('[role="listbox"], select').forEach((el) => {
+    clearAutofilledStyle(el);
   });
 }
 
@@ -488,6 +558,7 @@ async function runAutofillWithRetry(sourceData, attempt = 0, force = false) {
 
   const items = queryAll(document, SELECTORS.questionItem);
   if (!items.length && attempt < MAX_AUTOFILL_RETRIES) {
+    console.log(`[Retry ${attempt + 1}] waiting for form...`);
     if (pendingRetryId) {
       autofillInProgress = false;
       return { filled: 0, skipped: 0, errors: [] };
@@ -518,7 +589,7 @@ function setupMutationObserver() {
   if (observerStarted || autofillDone) return;
   observer = new MutationObserver((mutations) => {
     const hasNewNodes = mutations.some((mutation) => mutation.addedNodes && mutation.addedNodes.length > 0);
-    if (!hasNewNodes || autofillDone) return;
+    if (!hasNewNodes || autofillDone || autofillInProgress) return;
     runAutofillWithRetry(userData).catch((error) => {
       console.error('[FormFiller] observer autofill failed:', error);
     });
@@ -542,8 +613,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (type === 'FILL_FORM' || action === 'fillForm') {
-    const sourceData = message.data || message.userData || userData;
-    runAutofillWithRetry(sourceData, 0, true).then((result) => {
+    runAutofillWithRetry(message.data || userData, 0, true).then((result) => {
       sendResponse({ success: true, ...result });
     });
     return true;

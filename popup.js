@@ -370,7 +370,11 @@ async function init() {
   // Check whether the active tab is a Google Form
   try {
     const tab = await getActiveTab();
-    if (!tab.url || !tab.url.startsWith('https://docs.google.com/forms/')) {
+    const isSupportedFormUrl = Boolean(
+      tab.url &&
+      (tab.url.startsWith('https://docs.google.com/forms/') || tab.url.startsWith('https://forms.gle/'))
+    );
+    if (!isSupportedFormUrl) {
       showStatus('Navigate to a Google Form to use this extension.', 'info', 0);
       btnFill.disabled = true;
       btnClear.disabled = true;
