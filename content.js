@@ -5,28 +5,26 @@ console.log('[FormFiller] Content script loaded on:', window.location.href);
 const userData = {
   profiles: {
     default: {
-      prn: '1234567890',
+      prn: '123B1B133',
       full_name: 'Shreeyash Patil',
-      mobile_number: '9876543210',
-      dob: '2004-05-15',
+      mobile_number: '7219512605',
+      dob: '2005-08-27',
       gender: 'Male',
       coding_profiles: {
-        leetcode: 'https://leetcode.com/yourusername',
-        gfg: 'https://geeksforgeeks.org/user/yourusername',
-        hackerrank: 'https://hackerrank.com/yourusername'
+        gfg: 'https://www.geeksforgeeks.org/profile/spikeshield',
       },
-      linkedin: 'https://linkedin.com/in/yourusername',
-      github: 'https://github.com/yourusername',
-      cocubes_score: '850',
+      linkedin: 'https://www.linkedin.com/in/shreeyash-patil27/',
+      github: 'https://github.com/ShreeyashPatil2708',
+      cocubes_score: '00',
       college_name: 'Pimpri Chinchwad College of Engineering',
       academic_scores: {
-        class_10_percentage: '95',
-        class_12_percentage: '90',
-        btech_aggregate: '8.5 CGPA'
+        class_10_percentage: '76',
+        class_12_percentage: '76',
+        btech_aggregate: '6.7 CGPA'
       },
       graduation_year: '2027',
-      technical_achievements: 'Participated in hackathons and built ML/cloud projects',
-      personal_achievements: 'Leadership roles and event management',
+      technical_achievements: 'built multiple cloud projects',
+      personal_achievements: 'Published research paper in international conference, Leadership roles and event management',
       projects: 'Crop Price Prediction, SaaS ML Trainer, Cloud Benchmarking'
     }
   },
