@@ -243,7 +243,7 @@ function matchField(questionText) {
           bestPath = rule.path;
         }
       }
-      if (normalizedTerm.includes(text) && text.length >= 4) {
+      else if (normalizedTerm.includes(text) && text.length >= 4) {
         const score = text.length + 8;
         if (score > bestScore) {
           bestScore = score;
